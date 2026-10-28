@@ -1,0 +1,82 @@
+#!/command/with-contenv sh
+set -eu
+
+fail() {
+    printf 'aria2: %s\n' "$1" >&2
+    exit 1
+}
+
+case "$PUID" in ''|*[!0-9]*) fail 'PUID must be a numeric user ID.' ;; esac
+case "$PGID" in ''|*[!0-9]*) fail 'PGID must be a numeric group ID.' ;; esac
+case "$UMASK" in
+    [0-7][0-7][0-7]|0[0-7][0-7][0-7]) ;;
+    *) fail 'UMASK must contain three octal digits, optionally prefixed with 0.' ;;
+esac
+case "$ARIANG_RPC_PORT" in ''|*[!0-9]*) fail 'ARIANG_RPC_PORT must be a port number.' ;; esac
+[ "$ARIANG_RPC_PORT" -ge 1 ] && [ "$ARIANG_RPC_PORT" -le 65535 ] \
+    || fail 'ARIANG_RPC_PORT must be between 1 and 65535.'
+case "$ARIANG_RPC_SECRET_AUTO" in true|false) ;; *) fail 'ARIANG_RPC_SECRET_AUTO must be true or false.' ;; esac
+
+umask "$UMASK"
+mkdir -p /config /Downloads /run/ariang
+config=/config/aria2.conf
+if [ ! -f "$config" ]; then
+    cp /usr/local/share/aria2/aria2.conf "$config"
+fi
+touch /config/aria2.session
+
+# Pass values through the environment, not awk/sed replacement strings. Secrets
+# containing &, /, backslashes or = must survive unchanged.
+set_option() {
+    temporary=$(mktemp /config/aria2.conf.XXXXXX)
+    ARIA2_SETTING_KEY="$1" ARIA2_SETTING_VALUE="$2" awk '
+        BEGIN { key = ENVIRON["ARIA2_SETTING_KEY"]; value = ENVIRON["ARIA2_SETTING_VALUE"] }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { next }
+        { print }
+        END { print key "=" value }
+    ' "$config" > "$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$config"
+}
+
+secret=${ARIA2_RPC_SECRET:-}
+if [ -z "$secret" ]; then
+    secret=$(awk '
+        /^[[:space:]]*rpc-secret[[:space:]]*=/ {
+            sub(/^[^=]*=/, ""); value = $0
+        }
+        END { printf "%s", value }
+    ' "$config")
+fi
+if [ -z "$secret" ]; then
+    secret=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    printf '%s\n' 'aria2: generated an RPC secret and saved it in /config/aria2.conf.'
+fi
+[ "$(printf '%s' "$secret" | tr -d '\r\n')" = "$secret" ] \
+    || fail 'The RPC secret must not contain line breaks.'
+case "$secret" in [[:space:]]*|*[[:space:]]) fail 'The RPC secret must not start or end with whitespace.' ;; esac
+set_option rpc-secret "$secret"
+set_option rpc-listen-port 6800
+
+# Start from pristine assets each time, including when auto-fill is turned off.
+cp -R /usr/local/share/ariang/. /run/ariang/
+for javascript in /run/ariang/js/aria-ng*.js; do
+    grep -q 'rpcPort:"6800"' "$javascript" || fail 'AriaNg RPC defaults were not found.'
+    sed -i "s/rpcPort:\"6800\"/rpcPort:\"${ARIANG_RPC_PORT}\"/g" "$javascript"
+    if [ "$ARIANG_RPC_SECRET_AUTO" = true ]; then
+        grep -q 'secret:""' "$javascript" || fail 'AriaNg secret default was not found.'
+        encoded_secret=$(printf '%s' "$secret" | base64 | tr -d '\n')
+        sed -i "s|secret:\"\"|secret:\"${encoded_secret}\"|g" "$javascript"
+    fi
+done
+
+[ -f "/usr/share/zoneinfo/$TZ" ] || fail 'TZ is not a recognized timezone.'
+ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+printf '%s\n' "$TZ" > /etc/timezone
+groupmod -o -g "$PGID" aria2
+usermod -o -u "$PUID" aria2
+
+# Do not recursively chown a potentially huge download directory on every boot.
+chown -R aria2:aria2 /config /run/ariang
+chown aria2:aria2 /Downloads
+printf '%s\n' 'aria2: web UI on :8080; authenticated RPC on :6800; BitTorrent unavailable.'

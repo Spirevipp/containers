@@ -1,0 +1,4 @@
+#!/command/with-contenv sh
+set -eu
+umask "$UMASK"
+exec /command/s6-setuidgid aria2 aria2c --conf-path=/config/aria2.conf

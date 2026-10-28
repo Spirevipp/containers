@@ -1,0 +1,95 @@
+ARG ALPINE_VERSION=3.24
+
+# Build the downloader here instead of depending on a separately published binary.
+FROM alpine:${ALPINE_VERSION} AS aria2-build
+ARG ARIA2_VERSION=1.37.0
+ARG ARIA2_SHA256=60a420ad7085eb616cb6e2bdf0a7206d68ff3d37fb5a956dc44242eb2f79b66b
+WORKDIR /build
+# Keep Alpine package patch versions floating for security updates.
+# hadolint ignore=DL3018
+RUN apk add --no-cache build-base pkgconf curl ca-certificates \
+        gnutls-dev c-ares-dev sqlite-dev zlib-dev libssh2-dev \
+    && curl -fSL --retry 3 \
+        "https://github.com/aria2/aria2/releases/download/release-${ARIA2_VERSION}/aria2-${ARIA2_VERSION}.tar.xz" \
+        -o /tmp/aria2.tar.xz \
+    && printf '%s  /tmp/aria2.tar.xz\n' "${ARIA2_SHA256}" > /tmp/aria2.sha256 \
+    && sha256sum -c /tmp/aria2.sha256 \
+    && tar -xJf /tmp/aria2.tar.xz -C /build --strip-components=1 \
+    && ./configure --disable-bittorrent --disable-metalink --disable-nls \
+        --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt \
+    && make -j"$(nproc)" \
+    && make DESTDIR=/out install-strip \
+    && install -Dm644 COPYING /out/usr/local/share/licenses/aria2/COPYING \
+    && install -Dm644 /tmp/aria2.tar.xz \
+        "/out/usr/local/share/aria2/source/aria2-${ARIA2_VERSION}.tar.xz" \
+    && /out/usr/local/bin/aria2c --version > /tmp/features \
+    && ! grep -Eq 'BitTorrent|Metalink' /tmp/features
+
+FROM alpine:${ALPINE_VERSION} AS assets
+ARG ARIANG_VERSION=1.3.15
+ARG ARIANG_SHA256=d2317e441966ad31f1e342cb6a6cc1c51808fb0a10cf6e39cb30b0517b3e7823
+ARG S6_VERSION=3.2.3.2
+# hadolint ignore=DL3018
+RUN apk add --no-cache curl ca-certificates \
+    && curl -fSL --retry 3 \
+        "https://github.com/mayswind/AriaNg/releases/download/${ARIANG_VERSION}/AriaNg-${ARIANG_VERSION}.zip" \
+        -o /tmp/ariang.zip \
+    && printf '%s  /tmp/ariang.zip\n' "${ARIANG_SHA256}" > /tmp/ariang.sha256 \
+    && sha256sum -c /tmp/ariang.sha256 \
+    && mkdir -p /ariang /s6 \
+    && unzip -q /tmp/ariang.zip -d /ariang \
+    && curl -fSL --retry 3 \
+        "https://raw.githubusercontent.com/mayswind/AriaNg/${ARIANG_VERSION}/LICENSE" \
+        -o /ariang/LICENSE \
+    && case "$(apk --print-arch)" in \
+        x86_64) s6_arch=x86_64; s6_sha=e6befcc96a437a3831386ecfc51808c5d3e939dc5fe3c02ae9284599e8aa2408 ;; \
+        aarch64) s6_arch=aarch64; s6_sha=b17f17a82e7a515c682a91edaf2ffdabb73f891981b6c1fd712115693a2f8b4c ;; \
+        *) echo 'Only x86_64 and aarch64 are currently supported.' >&2; exit 1 ;; \
+    esac \
+    && curl -fSL --retry 3 \
+        "https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-noarch.tar.xz" \
+        -o /tmp/s6-noarch.tar.xz \
+    && printf '%s\n' '5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12  /tmp/s6-noarch.tar.xz' > /tmp/s6-noarch.sha256 \
+    && sha256sum -c /tmp/s6-noarch.sha256 \
+    && curl -fSL --retry 3 \
+        "https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${s6_arch}.tar.xz" \
+        -o /tmp/s6-arch.tar.xz \
+    && printf '%s  /tmp/s6-arch.tar.xz\n' "${s6_sha}" > /tmp/s6-arch.sha256 \
+    && sha256sum -c /tmp/s6-arch.sha256 \
+    && tar -xJf /tmp/s6-noarch.tar.xz -C /s6 \
+    && tar -xJf /tmp/s6-arch.tar.xz -C /s6
+
+FROM alpine:${ALPINE_VERSION}
+# hadolint ignore=DL3018
+RUN apk add --no-cache ca-certificates darkhttpd tzdata shadow \
+        c-ares gnutls sqlite-libs zlib libstdc++ libssh2 \
+    && addgroup -g 1000 aria2 \
+    && adduser -D -H -u 1000 -G aria2 -h /config -s /sbin/nologin aria2 \
+    && mkdir -p /config /Downloads
+
+COPY --from=aria2-build /out/usr/local/ /usr/local/
+COPY --from=assets /s6/ /
+COPY --from=assets /ariang/ /usr/local/share/ariang/
+COPY LICENSE NOTICE.md /usr/local/share/licenses/container/
+COPY root/ /
+RUN chmod 755 /etc/cont-init.d/10-aria2 \
+        /etc/services.d/aria2/run /etc/services.d/webui/run \
+        /usr/local/bin/container-healthcheck
+
+# The secret itself is supplied only at runtime; AUTO is a boolean UI flag.
+# hadolint ignore=DL3064
+ENV PUID=1000 \
+    PGID=1000 \
+    UMASK=022 \
+    TZ=Etc/UTC \
+    ARIANG_RPC_SECRET_AUTO=true \
+    ARIANG_RPC_PORT=6800 \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
+    S6_SERVICES_GRACETIME=60000
+
+LABEL org.opencontainers.image.title="aria2 with AriaNg" \
+      org.opencontainers.image.description="Persistent direct downloads; BitTorrent and Metalink compiled out."
+
+VOLUME ["/config", "/Downloads"]
+EXPOSE 8080 6800
+ENTRYPOINT ["/init"]

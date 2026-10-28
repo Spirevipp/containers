@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+wget -q --spider http://127.0.0.1:8080/
+# This introspection method does not need the secret; a successful JSON-RPC
+# response proves that the backend, rather than only the web server, is alive.
+wget -q -O - --header='Content-Type: application/json' \
+    --post-data='{"jsonrpc":"2.0","id":"health","method":"system.listMethods"}' \
+    http://127.0.0.1:6800/jsonrpc | grep -q '"result"'

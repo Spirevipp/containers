@@ -1,0 +1,8 @@
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.conf text eol=lf
+Containerfile text eol=lf
+**/run text eol=lf
+aria2/root/etc/cont-init.d/* text eol=lf

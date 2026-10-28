@@ -1,0 +1,6 @@
+*
+!Containerfile
+!root/
+!root/**
+!LICENSE
+!NOTICE.md

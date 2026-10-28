@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>aria2-direct</Name>
+  <Repository>ghcr.io/spirevipp/containers/aria2:latest</Repository>
+  <Registry>https://ghcr.io/spirevipp/containers/aria2</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/Spirevipp/containers/tree/main/aria2</Project>
+  <Support>https://github.com/Spirevipp/containers/issues</Support>
+  <TemplateURL>https://raw.githubusercontent.com/Spirevipp/containers/main/aria2/unraid-template.xml</TemplateURL>
+  <ReadMe>https://raw.githubusercontent.com/Spirevipp/containers/main/aria2/README.md</ReadMe>
+  <Icon>https://raw.githubusercontent.com/Spirevipp/containers/main/aria2/icon.png</Icon>
+  <Overview>Download files directly to your server using aria2 and the bundled AriaNg web interface. Supports HTTP(S), FTP and SFTP, persistent queues, resumable downloads and browser-extension/API submission. BitTorrent and Metalink are unavailable.
+
+Intended for a trusted LAN. Automatic RPC-secret setup is enabled: anyone who can load the web interface can recover the secret and control downloads. Leave the secret blank to generate one on first start.
+
+Review the download path before applying. When replacing another aria2 image, use a fresh config directory; its old configuration may contain unsupported torrent settings. If you change the host-side RPC port, set AriaNg RPC Port to the same value.</Overview>
+  <Category>Downloaders:</Category>
+  <WebUI>http://[IP]:[PORT:8085]/</WebUI>
+  <ExtraParams>--stop-timeout=60 --health-cmd=container-healthcheck --health-interval=30s --health-timeout=5s --health-start-period=20s --health-retries=3</ExtraParams>
+  <PostArgs/>
+
+  <Config Name="Web UI Port" Target="8080" Default="8085" Mode="tcp" Description="Host port for AriaNg. Changing this host port does not require any environment-variable changes." Type="Port" Display="always" Required="true" Mask="false">8085</Config>
+  <Config Name="RPC Port" Target="6800" Default="6800" Mode="tcp" Description="Host port used by your browser, extensions and API clients to reach aria2. If changed, update AriaNg RPC Port below as well." Type="Port" Display="always" Required="true" Mask="false">6800</Config>
+  <Config Name="Appdata" Target="/config" Default="/mnt/user/appdata/aria2-direct" Mode="rw" Description="Persistent configuration, RPC secret and download queue. Use a fresh directory when migrating from another image." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/aria2-direct</Config>
+  <Config Name="Downloads" Target="/Downloads" Default="/mnt/user/downloads/aria2" Mode="rw" Description="Download destination, including unfinished files and their .aria2 resume metadata. Choose your actual download share; preserve this data between restarts." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/downloads/aria2</Config>
+
+  <Config Name="RPC Secret" Target="ARIA2_RPC_SECRET" Default="" Mode="" Description="Optional secret without surrounding quotes. Leave blank to reuse the saved secret or generate one on first start. No line breaks or leading/trailing whitespace." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Auto-fill RPC Secret" Target="ARIANG_RPC_SECRET_AUTO" Default="true|false" Mode="" Description="Automatically supply the secret to AriaNg. Anyone who can load the UI can retrieve it. Set false to enter the secret manually instead." Type="Variable" Display="always" Required="true" Mask="false">true</Config>
+  <Config Name="AriaNg RPC Port" Target="ARIANG_RPC_PORT" Default="6800" Mode="" Description="Host-side RPC port AriaNg connects to. Must match the RPC Port mapping above. The internal RPC port stays 6800." Type="Variable" Display="always" Required="true" Mask="false">6800</Config>
+  <Config Name="Timezone" Target="TZ" Default="Etc/UTC" Mode="" Description="Container timezone, for example Etc/UTC or Europe/Oslo." Type="Variable" Display="always" Required="true" Mask="false">Europe/Oslo</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="File-owner user ID. Unraid normally uses 99 for nobody. Existing download subdirectories must be writable by this user/group." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="File-owner group ID. Unraid normally uses 100 for users." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="022" Mode="" Description="Permissions mask for newly created files. Use 002 if you want group-write permission on downloads." Type="Variable" Display="advanced" Required="true" Mask="false">022</Config>
+</Container>
