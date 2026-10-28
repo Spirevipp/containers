@@ -1,0 +1,72 @@
+name: Check upstream updates
+
+on:
+  schedule:
+    - cron: '17 2 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check for updates without creating or changing PRs
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-updates
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    if: github.event_name == 'workflow_dispatch' || vars.UPDATES_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RENOVATE_VERSION: "44.192.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Create scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.UPDATE_APP_ID }}
+          private-key: ${{ secrets.UPDATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-administration: read
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: write
+          permission-statuses: write
+          permission-issues: write
+          permission-vulnerability-alerts: read
+          permission-workflows: write
+      - name: Configure bot commit identity
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          login="${APP_SLUG}[bot]"
+          user_id=$(gh api "/users/${login}" --jq '.id')
+          printf 'RENOVATE_USERNAME=%s\n' "$login" >> "$GITHUB_ENV"
+          printf 'RENOVATE_GIT_AUTHOR=%s <%s+%s@users.noreply.github.com>\n' "$login" "$user_id" "$login" >> "$GITHUB_ENV"
+      - name: Run Renovate OSS
+        env:
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/renovate-npm
+          RENOVATE_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_COM_TOKEN: ${{ steps.app-token.outputs.token }}
+          RENOVATE_CONFIG_FILE: ${{ github.workspace }}/.github/renovate.cjs
+          UPDATE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          LOG_LEVEL: info
+        run: |
+          if [[ "$UPDATE_DRY_RUN" == true ]]; then
+            export RENOVATE_DRY_RUN=full
+          fi
+          npm exec --yes --package="renovate@${RENOVATE_VERSION}" -- renovate

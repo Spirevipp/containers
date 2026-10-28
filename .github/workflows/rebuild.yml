@@ -1,0 +1,41 @@
+name: Rebuild all containers
+
+on:
+  schedule:
+    - cron: '23 4 15 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: rebuild-containers
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    if: >-
+      github.ref_name == github.event.repository.default_branch &&
+      (github.event_name == 'workflow_dispatch' || vars.REBUILDS_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: discover
+        run: |
+          matrix=$(python3 .github/scripts/containers.py discover)
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+  containers:
+    needs: discover
+    if: needs.discover.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    uses: ./.github/workflows/build-container.yml
+    with:
+      container: ${{ matrix.container }}
+      publish: true

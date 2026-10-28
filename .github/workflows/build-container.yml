@@ -1,0 +1,101 @@
+name: Build container
+
+on:
+  workflow_call:
+    inputs:
+      container:
+        type: string
+        required: true
+      publish:
+        type: boolean
+        default: false
+      version_tag:
+        type: string
+        default: ''
+
+# Inherit the caller's permissions: PRs get contents:read; publishing callers
+# additionally grant packages:write.
+
+jobs:
+  build-and-test:
+    name: Native build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      CONTAINER_NAME: ${{ inputs.container }}
+      LOCAL_IMAGE: localhost/${{ inputs.container }}:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Podman
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y podman
+      - name: Build OCI image
+        run: |
+          python3 .github/scripts/containers.py validate --container "$CONTAINER_NAME"
+          sudo podman build --format oci --pull=always \
+            --file "$CONTAINER_NAME/Containerfile" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "$LOCAL_IMAGE" "$CONTAINER_NAME"
+      - name: Run container smoke test
+        env:
+          CONTAINER_ENGINE: sudo podman
+        run: python3 .github/scripts/containers.py smoke --container "$CONTAINER_NAME" --image "$LOCAL_IMAGE"
+      - name: Push tested architecture
+        if: inputs.publish
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/${CONTAINER_NAME}"
+          build_tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${TARGET_ARCH}"
+          printf '%s' "$REGISTRY_TOKEN" | sudo podman login ghcr.io \
+            --username "$REGISTRY_USER" --password-stdin
+          sudo podman push --format oci "$LOCAL_IMAGE" "docker://${image}:${build_tag}"
+
+  publish:
+    name: Publish multi-architecture OCI image
+    needs: build-and-test
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    env:
+      CONTAINER_NAME: ${{ inputs.container }}
+      VERSION_TAG: ${{ inputs.version_tag }}
+    steps:
+      - name: Install Podman
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y podman
+      - name: Assemble and publish manifest
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/${CONTAINER_NAME}"
+          build_tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "$REGISTRY_TOKEN" | sudo podman login ghcr.io \
+            --username "$REGISTRY_USER" --password-stdin
+          sudo podman manifest create localhost/aria2-release
+          for arch in amd64 arm64; do
+            sudo podman manifest add localhost/aria2-release "docker://${image}:${build_tag}-${arch}"
+          done
+          sudo podman manifest push --all --format oci localhost/aria2-release \
+            "docker://${image}:sha-${GITHUB_SHA::12}"
+          case "$VERSION_TAG" in
+            "${CONTAINER_NAME}-v"*) tag="${VERSION_TAG#${CONTAINER_NAME}-v}" ;;
+            '') tag=latest ;;
+            *) echo 'Unexpected release tag prefix' >&2; exit 1 ;;
+          esac
+          sudo podman manifest push --all --format oci localhost/aria2-release "docker://${image}:${tag}"
+          printf 'Published `%s:%s` (amd64 and arm64).\n' "$image" "$tag" >> "$GITHUB_STEP_SUMMARY"

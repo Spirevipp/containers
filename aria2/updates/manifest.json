@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "containerfile": "Containerfile",
+  "smokeTest": "tests/smoke.py",
+  "validationTests": "updates/test_refresh.py",
+  "refreshScript": "updates/refresh.py",
+  "baseImages": [
+    {"name": "alpine", "manualReleaseUpdates": true}
+  ],
+  "dependencies": [
+    {
+      "name": "aria2",
+      "arg": "ARIA2_VERSION",
+      "repository": "aria2/aria2",
+      "tag": "release-{version}",
+      "extractVersion": "^release-(?<version>\\d+\\.\\d+\\.\\d+)$",
+      "versioning": "semver",
+      "assets": [
+        {"arg": "ARIA2_SHA256", "file": "aria2-{version}.tar.xz"}
+      ]
+    },
+    {
+      "name": "AriaNg",
+      "arg": "ARIANG_VERSION",
+      "repository": "mayswind/AriaNg",
+      "tag": "{version}",
+      "extractVersion": "^(?<version>\\d+\\.\\d+\\.\\d+)$",
+      "versioning": "semver",
+      "assets": [
+        {"arg": "ARIANG_SHA256", "file": "AriaNg-{version}.zip"}
+      ]
+    },
+    {
+      "name": "s6-overlay",
+      "arg": "S6_VERSION",
+      "repository": "just-containers/s6-overlay",
+      "tag": "v{version}",
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)$",
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:\\.(?<build>\\d+))?$",
+      "assets": [
+        {"arg": "S6_NOARCH_SHA256", "file": "s6-overlay-noarch.tar.xz"},
+        {"arg": "S6_AMD64_SHA256", "file": "s6-overlay-x86_64.tar.xz"},
+        {"arg": "S6_ARM64_SHA256", "file": "s6-overlay-aarch64.tar.xz"}
+      ]
+    }
+  ]
+}
