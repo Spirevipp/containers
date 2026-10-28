@@ -9,7 +9,7 @@ merging. Prereleases are ignored; releases normally wait three days.
 1. Push the workflows and run **Container checks** once to register **Container CI**.
 2. Create a private GitHub App under **Settings > Developer settings > GitHub Apps**.
    Use the repository URL as its homepage, disable webhooks, and install it only
-   on this repository. Generate a private key and note the numeric App ID.
+   on this repository. Generate a private key and note the Client ID or numeric App ID.
 
    | Repository permission | Access |
    | --- | --- |
@@ -21,7 +21,7 @@ merging. Prereleases are ignored; releases normally wait three days.
 
    | Kind | Name | Value |
    | --- | --- | --- |
-   | Variable | `UPDATE_APP_ID` | Numeric App ID |
+   | Variable | `UPDATE_APP_ID` | App Client ID or numeric App ID |
    | Secret | `UPDATE_APP_PRIVATE_KEY` | Complete PEM contents |
    | Variable | `UPDATES_ENABLED` | Leave unset until setup is complete |
    | Variable | `REBUILDS_ENABLED` | Optional; leave unset to disable scheduled rebuilds |
