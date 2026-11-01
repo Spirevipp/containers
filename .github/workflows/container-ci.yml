@@ -15,7 +15,7 @@ concurrency:
 jobs:
   discover:
     name: Select affected containers
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
       any: ${{ steps.select.outputs.any }}
@@ -39,7 +39,7 @@ jobs:
 
   validate:
     name: Validate update configuration
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,7 +72,7 @@ jobs:
     name: Container CI
     if: always()
     needs: [discover, validate, containers]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Require all relevant checks to pass
         env:
