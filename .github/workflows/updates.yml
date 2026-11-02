@@ -20,7 +20,7 @@ concurrency:
 jobs:
   renovate:
     if: github.event_name == 'workflow_dispatch' || vars.UPDATES_ENABLED == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
       RENOVATE_VERSION: "44.192.2"

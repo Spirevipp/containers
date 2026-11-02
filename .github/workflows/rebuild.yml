@@ -18,7 +18,7 @@ jobs:
     if: >-
       github.ref_name == github.event.repository.default_branch &&
       (github.event_name == 'workflow_dispatch' || vars.REBUILDS_ENABLED == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
     steps:
