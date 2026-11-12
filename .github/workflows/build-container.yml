@@ -68,7 +68,7 @@ jobs:
     name: Publish multi-architecture OCI image
     needs: build-and-test
     if: inputs.publish
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       CONTAINER_NAME: ${{ inputs.container }}
       VERSION_TAG: ${{ inputs.version_tag }}
